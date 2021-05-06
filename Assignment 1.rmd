@@ -1,0 +1,973 @@
+---
+title: "Assignment 1 | Report"
+author: "480423142"
+date: "Sept 2020"
+output: rmdformats::material
+code_folding: hide
+---
+
+# Introduction  
+***
+
+## **Executive Summary**
+1. The number of CoVid tests among Data2X02 students does not appear to follow a Poisson distribution.
+
+2. The flossing habits of Data2X02 students appear to be independent of the time elapsed since their last visit to the dentist.
+
+3. It appears that male and female Data2X02 students do not spend the same average amount of time studying each week. 
+
+
+***  
+<br> 
+
+## **Initial Data Analysis**
+### 1. Is this a random sample of Data2X02 students?
+No. Although this survey was made accessible to all students of Data2X02, it is naive to assume that the respondents represent a random selection among the cohort.   
+Since it was not compulsory, we can be confident there is some level of **non-response** bias. It is likely that diligent students are overrepresented - those most engaged with the subject and its online forum. Conversely, uncommitted or part-time students may be underrepresented - either unaware of the survey or simply choosing not to participate.
+
+### 2. Other biases  
+
+- **Non-response bias** is most likely to skew variables related to study and work; Time spent studying, time spent working, and stress level are all feasibly linked to university diligence.  
+- **Response bias** could be present for potentially sensitive questions; Participants may not wish to disclose their postcode - preferring to omit a response or provide a fake answer.
+- **Observer bias** is potentially present. In a survey that is a part of their study, many students may (consciously or unconsciously) be influenced to misreport their study habits or stress levels.  
+- **Selection bias** is definitely a risk, but can be mitigated if we limit our conclusions to the population from which we are sampling. If we claim to be able to draw conclusions pertaining to all humans, we  neglect an intrinsic selection bias in our sampling.
+
+
+### 3. Do questions need improvement?
+Yes. Answers to several questions cannot be interpreted with any confidence due to the range of possible responses allowed. For instance:  
+
+- "What is your shoe size?" must specify a sizing convention in order for us to make any meaningful comparison across observations.
+- "How tall are you?" should specify a measurement unit for the same reason.
+- Many questions requested free-text response, permitting misspellings and aberrant responses. The resulting answers demand, therefore, considerable manipulation - sometimes requiring inference that cannot be substantiated. To resolve this, questions regarding gender, social media, and eye colour could all reasonably provide a list of responses from which to choose.
+
+
+
+***  
+<br> 
+
+# Cleaning and Inspecting
+
+***
+
+```{r setup, echo=FALSE, message = FALSE, show = FALSE, hide = TRUE}
+knitr::opts_chunk$set(echo = TRUE, 
+                      message = FALSE, 
+                      warning = FALSE,
+                      fig.width = 10,
+                      fig.height = 3)
+library(tidyverse)
+library(janitor)
+library(skimr)
+library(visdat)
+library(gendercodeR)
+library(formattable)
+library(data.table)
+library(kableExtra)
+
+```
+
+
+
+## **Import data and clean column names**
+Column names are cleaned using the Janitor package for R.  
+Once cleaned, column names are manually abbreviated where appropriate.
+
+
+```{r Import and clean, message=FALSE}
+raw = readr::read_csv("https://docs.google.com/spreadsheets/d/e/2PACX-1vTf8eDSN_2QbMTyVvO5bdYKZSEEF2bufDdYnLnL-TsR8LM-6x-xu1cxmDMohlbLrkMJn9DE7EG7pg5P/pub?gid=1724783278&single=true&output=csv")
+
+x = raw %>% janitor::clean_names()
+
+colnames(x)[2] = "covid_test"
+colnames(x)[4] = "postcode"
+colnames(x)[5] = "dentist"
+colnames(x)[6] = "study_hrs"
+colnames(x)[7] = "social_media"
+colnames(x)[8] = "pet"
+colnames(x)[9] = "live_with_parents"
+colnames(x)[10] = "exercise_hrs"
+colnames(x)[11] = "eye_colour"
+colnames(x)[12] = "asthma"
+colnames(x)[13] = "work_hrs"
+colnames(x)[14] = "fav_season"
+colnames(x)[15] = "shoe_size"
+colnames(x)[16] = "height"
+colnames(x)[17] = "floss_freq"
+colnames(x)[18] = "glasses"
+colnames(x)[19] = "dom_hand"
+colnames(x)[20] = "steak_pref"
+colnames(x)[21] = "stress"
+
+t1 = tibble(Index = 1:21, `Abbreviated` = colnames(x), `Original question` = colnames(raw)) %>%
+  setDF() %>% kbl() %>%
+  kable_styling(bootstrap_options = c("striped",
+                                      "hover",
+                                      "condensed",
+                                      "bordered",
+                                      full_width=T))
+t1
+
+```
+  
+***  
+
+
+
+## **Variable typing and missingness**
+R's automatic attempt at interpreting variable types needs attention.  
+
+* Gender ought to be considered a factor, but to do so, misspellings and obvious mistakes must be cleaned and corrected. The [**gendercodeR** package](https://github.com/ropenscilabs/gendercoder) groups the free-form text entries for gender logically.
+* Postcode needs to be reclassified, since it is not actually a numeric value.
+* Submission Timestamp can be made a time object using [**lubridate**](https://lubridate.tidyverse.org/).
+* Numerous other columns should be considered factors rather than character variables.
+
+Visualising the observations by grouping them by their typing both verifies those typing decisions, and enables us to notice those observations with high missingnesss.
+```{r Re-Typing variables, fig.height=5, fig.cap="Variable typing and missingness"}
+x$gender = gendercodeR::recode_gender(x$gender)
+
+x = x %>% mutate(
+  gender = as.factor(gender),
+  postcode = as.character(postcode),
+  gender = as.factor(gender),
+  timestamp = lubridate::dmy_hms(timestamp),
+  pet = as.factor(pet),
+  live_with_parents = as.factor(live_with_parents),
+  eye_colour = as.factor(eye_colour),
+  asthma = as.factor(asthma),
+  fav_season = as.factor(fav_season),
+  glasses = as.factor(glasses),
+  dom_hand = as.factor(dom_hand),
+  steak_pref = ordered(steak_pref, levels = c("Rare",
+                                              "Medium-rare",
+                                              "Medium",
+                                              "Medium-well done",
+                                              "Well done",
+                                              "I don't eat beef")),
+  dentist = ordered(dentist, levels = c("Less than 6 months",
+                                        "Between 6 and 12 months",
+                                        "Between 12 months and 2 years",
+                                        "More than 2 years")),
+  floss_freq = ordered(floss_freq, levels = c("Every day",
+                                              "Most days",
+                                              "Weekly",
+                                              "Less than once a week"))
+  )
+
+visdat::vis_dat(x)
+```
+
+Discard observations that are more than 80% empty.
+
+```{r missingness}
+## Remove rows with more than 80% NA
+x = x[which(rowMeans(!is.na(x)) > 0.8), ]
+```
+
+***  
+
+## **Height**  
+Consolidate all heights into CM.
+```{r Height cor, fig.height=3, fig.cap="Before and after height scaling"}
+p1 = x %>% ggplot(aes(x = height)) +
+  geom_histogram(fill="tomato") +
+  labs(x="Height", y="Count")
+
+x = x %>% 
+  dplyr::mutate(
+    height = dplyr::case_when(
+      height < 2.5 ~ height*100,
+      TRUE ~ height
+    )
+  )
+p2 = x %>% ggplot(aes(x = height)) +
+  geom_histogram(fill="tomato")+
+  labs(x="Height (cm)", y="Count")
+gridExtra::grid.arrange(p1, p2, ncol = 2)
+
+```
+
+***
+
+## **Shoe size**
+Observations appear to employ a range of shoe sizing conventions. We can attempt to convert european sizes `~40` into UK sizes using a formula, and ignore the few observations `>200`.  
+Even after doing this, there are still too many confounding variables and odd values suggesting that the data cannot be meaningfully interpreted with any level of confidence.  
+```{r Shoe Cor, fig.height=3, fig.cap="Before and after shoe size scaling"}
+p1 = x %>% ggplot(aes(x = shoe_size)) +
+  geom_histogram(fill="tomato", binwidth = 8) +
+  labs(x="Shoe Size", y="Count")
+
+x = x %>% 
+  dplyr::mutate(
+    shoe_size = dplyr::case_when(
+      shoe_size > 20 & shoe_size < 100 ~ ((shoe_size-2)/ 1.27) - 22,
+      TRUE ~ shoe_size
+    )
+  ) %>% filter(shoe_size < 100 & shoe_size > 0)
+
+
+p2 = x %>% ggplot(aes(x = shoe_size)) +
+  geom_histogram(fill="tomato", binwidth=0.8)+
+  labs(x="Shoe Size", y="Count")
+
+gridExtra::grid.arrange(p1, p2, ncol = 2)
+
+```
+***
+
+## **Work, study and exercise Hours**
+Inspect the range and density of observations in free-response numeric variables.
+``` {r Occupation, fig.height=6, fig.cap="Time spent on various activities; before filtering"}
+
+p1 = ggplot(x, aes(x = work_hrs)) + 
+  geom_density(color="darkblue", fill="lightblue") +
+  labs(x="Weekly Paid Work (Hrs)", y="Density")
+
+
+
+p2 = ggplot(x, aes(x = study_hrs)) + 
+  geom_density(color="darkblue", fill="lightblue") +
+  labs(x="Weekly Study (Hrs)", y="Density")
+
+
+
+p3 = ggplot(x, aes(x = exercise_hrs)) + 
+  geom_density(color="darkblue", fill="lightblue") +
+  labs(x="Weekly Exercise (Hrs)", y="Density")
+
+
+gridExtra::grid.arrange(p1, p2, p3, ncol=2)
+
+```
+
+While most observations fall within the realm of possibility, some responses are clearly non-serious or impossible. They are filtered out.  
+Should we choose to investigate the relationship between gender and any of these variables, we must omit `non-binary` entries since there are too few to carry any statistical weight.  
+```{r Occupation2, fig.height=6, fig.cap="Time spent on various activities; after filtering"}
+
+x = x %>% 
+  dplyr::filter(
+  !(study_hrs > 75),
+  !(work_hrs > 48)
+  )
+
+x_bin = x %>% 
+  dplyr::filter(
+    !(gender == "non-binary")
+  )
+p1 = ggplot(x_bin, aes(x = work_hrs, fill=gender)) + 
+  geom_density(alpha = 0.6) +
+  labs(x="Weekly Paid Work (Hrs)", y="Density") +
+  theme(legend.position="none")
+
+
+
+p2 = ggplot(x_bin, aes(x = study_hrs, fill=gender)) + 
+  geom_density(alpha = 0.6) +
+  labs(x="Weekly Study (Hrs)", y="Density") +
+  theme(legend.position="none")
+
+
+p3 = ggplot(x_bin, aes(x = exercise_hrs, fill=gender)) + 
+  geom_density(alpha = 0.6) +
+  labs(x="Weekly Exercise (Hrs)", y="Density") +
+  scale_fill_discrete(name = "Gender", labels = c("F", "M")) +
+  theme(legend.position = c(1.7,0.5),
+        legend.background = element_rect(fill="lightgray",
+                                  size=0.2, linetype="solid", 
+                                  colour ="gray50"),
+        legend.key.height = unit(1, "cm"),
+        legend.key.width = unit(1, "cm")
+  )
+
+
+gridExtra::grid.arrange(p1, p2, p3, ncol=2)
+
+
+
+```
+
+
+## **Bounded numeric variables**
+Inspect the remaining bounded numeric entries.  
+There is nothing to be done here.
+```{r inspect bounded num, fig.cap="Inspecting numeric variables."}
+
+p1 = x %>% ggplot(aes(x = covid_test)) + 
+  geom_bar(fill="tomato") +
+  labs(x="Number of Covid Tests", y="Count")
+
+
+p2 = x_bin %>% ggplot(aes(x = stress)) +
+  geom_bar(fill="tomato") +
+  labs(x="Stress Level", y="Count")
+
+gridExtra::grid.arrange(p1, p2, ncol=2)
+```
+
+***
+
+## **Eye colour**
+
+With eye colour we've taken a different approach, using the `fct_lump()` function from the **forcats** package. See `fct_lump` for details.
+
+```{r Eye Colour, fig.cap="Eye colour; grouped"}
+x = x %>% 
+  mutate(
+    eye_colour = tolower(eye_colour),
+    eye_colour = forcats::fct_lump(eye_colour, n = 5)
+  )
+
+p1 = ggplot(x, aes(x = forcats::fct_infreq(eye_colour),
+                   stat="Identity", fill=eye_colour)) +
+  geom_bar() + 
+  scale_fill_manual("legend", values =c( "black"="gray15", "blue"="cyan4",
+                                         "brown"="tan3", "dark brown"="salmon4",
+                                         "green"="seagreen", "hazel"="khaki4",
+                                         "other"="darkgray")) +
+  theme(legend.position = "none") +
+  xlab("Eye Colour") +
+  ylab("Count")
+
+p1
+
+```
+
+***  
+
+## **Ordered categorical variables**
+These need no attention.
+
+```{r Other cat. var, fig.height=8, fig.cap="Ordered categorical variables"}
+
+
+p1 = x %>% 
+  ggplot(aes(x = dentist, stat="Identity", fill=dentist)) +
+  geom_bar() +
+  theme(legend.position = "none") +
+  labs(x="Time Since Last Dentist Visit", y="Count")
+
+p2 = x %>% drop_na(floss_freq) %>% 
+  ggplot(aes(x = floss_freq, stat="Identity", fill=floss_freq)) +
+  geom_bar() +
+  theme(legend.position = "none") +
+  labs(x="Floss Frequency", y="Count")
+
+
+p3 = x %>% 
+  ggplot(aes(x = steak_pref, stat="Identity", fill=steak_pref)) +
+  geom_bar() +
+  theme(legend.position = "none") +
+  labs(x="Steak Preference", y="Count")
+
+
+
+gridExtra::grid.arrange(p1, p2, p3, ncol = 1)
+```
+***
+
+
+## **Social media preference**
+Though this variable is very messy, we can resolve most issues by considering only the first two characters of each observation.   
+Some concessions must be acknowledged:  
+
+- We will have a substantial `other` group due to the high number of unique entries.
+- Some entries contained two social media platforms - only the first is considered.
+- Entries of `facebook messenger` will be incorrectly classified as facebook, and not messenger - since we are only inspecting the first two characters.
+
+Even with these concessions, the figure below is not without utility.
+```{r, fig.width=7, fig.height=3, fig.cap="Social media preferences; wrangled"}
+x = x %>% 
+  mutate(
+    social_media = tolower(social_media),
+    social_media_sub = substr(social_media, 1, 2),
+    social_media = case_when(
+      social_media_sub=="fa" ~ "Facebook",
+      social_media_sub=="in" ~ "Instagram",
+      social_media_sub=="me" ~ "Messenger",
+      social_media_sub=="re" ~ "Reddit",
+      social_media_sub=="ti" ~ "TikTok",
+      social_media_sub=="tw" ~ "Twitter",
+      social_media_sub=="we" ~ "WeChat",
+      social_media_sub=="yo" ~ "YouTube",
+      social_media_sub=="no" ~ "None",
+      !is.na(social_media_sub) ~ "Other",
+      TRUE ~ social_media_sub
+      )
+  )
+
+t1 = table(x$social_media)  %>% sort(decreasing=TRUE) 
+t1 %>%
+  kbl(col.names=c("Platform", "Count")) %>%
+  kable_styling(bootstrap_options = c("striped",
+                                      "hover",
+                                      "condensed",
+                                      "bordered"),
+                                      position="float_right")
+
+ggplot(data.frame(t1), aes(x=Var1, y=Freq, fill=Var1)) +
+  geom_bar(stat="identity") +
+  theme(legend.position = "none") +
+  labs(x="Social Media Preference", y="Count")
+
+
+```
+
+
+***
+
+<br>
+
+
+## **Time distribution**
+
+We can inspect survey responses over time, and check for any worrying patterns.
+```{r, fig.cap="Distribution of responses over time."}
+x %>% ggplot() + aes(x = timestamp) + 
+  geom_histogram(fill="tomato") +
+  labs(x="Date", y="Count")
+```
+
+
+
+
+
+***
+<br>
+
+
+# Hypothesis Test 1 - Covid Testing Numbers
+
+*** 
+
+*Do CoVid Test numbers follow a Poisson distribution?*  
+<br>
+The `covid_test` variable indicates the number of CoVid-19 tests each respondent has received. Those counts are here visualised in a barplot:
+``` {r Initial Covid review, fig.cap="CoVid-19 Test Numbers"}
+# tabyl(x$covid_test)
+counts = c(122, 28, 10, 4, 1, 2, 1, 0, 0, 0, 1)
+tests = c(0:10)
+
+df = data.frame(tests, counts)
+
+p1 = ggplot(df, aes(x=tests, y=counts)) + 
+  geom_bar(fill="tomato", stat="Identity") +
+  labs(x="Number of Tests", y="Count") +
+  scale_x_continuous(breaks =tests , labels = tests)
+
+p1
+```
+
+*** 
+
+<br>
+
+## Hypotheses
+We construct the following hypotheses to formalise our test.
+
+- *$H_0$*: The data follow a Poisson distribution.  
+- *$H_1$*: THe data are not consistent with a Poisson distribution.  
+
+
+Set $\alpha = 0.05$.
+
+*** 
+
+<br>
+
+## Assumptions
+In order to conduct this test, we assert that:  
+
+- Each observation is independent.  
+- The expected frequency of each group $e_i \geq 5$.  
+
+These assertions hold, since:  
+
+- We have no reason to believe that the number of tests one respondent has had impacts other respondents.  
+- We can combine any groups below the frequency threshold.  
+
+*** 
+
+<br>
+
+## Generate model
+
+``` {r Covid Hyp test, fig.cap="Test Numbers"}
+
+n = sum(counts)
+k = length(counts)
+
+lambda = mean(x$covid_test)
+
+p = dpois((0:length(counts)), lambda = lambda)
+p[11] = 1 - sum(p[1:10])
+
+ey = n * p
+
+t1 = tibble("# Tests"=0:(length(counts)-1),
+       "Actual Count"=counts,
+       "Expected Proportion"=round(p,3)[0:length(counts)],
+       "Expected Count"=round(ey,2)[0:length(counts)],
+       ) %>% 
+  setDF() %>% kbl() %>%
+  kable_styling(bootstrap_options = c("striped",
+                                      "hover",
+                                      "condensed",
+                                      "bordered",
+                                      full_width=T))
+t1
+```
+
+Clearly, groups must be aggregated to meet the stated assumptions.
+
+
+```{r Aggregated Covid Numbers, fig.cap="Aggregated Test Numbers"}
+yr = c(counts[1:2], sum(counts[3:11]))
+eyr = c(ey[1:2], sum(ey[3:11]))
+pr = c(p[1:2], sum(p[3:11]))
+
+t1 = tibble("# Tests"=c("0", "1", "2+"),
+       "Actual Count"=yr,
+       "Expected Proportion"=round(pr,3)[1:3],
+       "Expected Count"=round(eyr,2)[1:3],
+       ) %>% 
+  setDF() %>% kbl() %>%
+  kable_styling(bootstrap_options = c("striped",
+                                      "hover",
+                                      "condensed",
+                                      "bordered",
+                                      full_width=T))
+
+t1
+```
+
+*** 
+
+<br>
+
+## Test
+With the assumptions satisfied, we can conduct a Chi-Squared goodness of fit test with 1 degree of freedom.
+
+``` {r Covid Hyp Test, fig.cap="Goodness of fit test"}
+kr = length(yr)
+t0 = sum((yr - eyr)^2/eyr)
+pval = 1 - pchisq(t0, df = kr - 1 - 1)
+
+t1 = tibble("Deg. Freedom"=c(kr - 1 - 1),
+       "Test Statistic"=c(round(t0,2)),
+       "p-Value (%)"=round(pval*100,4),
+       "alpha (%)"= 5
+       ) %>% 
+  setDF() %>% kbl() %>%
+  kable_styling(bootstrap_options = c("striped",
+                                      "hover",
+                                      "condensed",
+                                      "bordered",
+                                      full_width=T))
+t1
+
+```
+
+*** 
+
+<br>
+
+## Conclusion
+As the p-Value is far below $\alpha$, the null hypothesis $H_0$ must be rejected. The data are not consistent with a Poisson distribution.  
+
+
+
+*** 
+
+<br>
+
+
+
+
+
+
+# Hypothesis Test 2 - Dentist Visits & Flossing
+
+*** 
+
+**Are the flossing habits of Data2X02 students independent of the time since their last dentist visit?**  
+
+<br> 
+
+Informally, we can visualise this graphically.
+```{r, fig.height=7}
+
+# Construct a contingency table
+ct = table(x$dentist, x$floss_freq)
+
+mosaicplot(ct,ylab="Floss Frequency", xlab="Last dentist visit", main="", color=c("tomato", "orange", "gold2", "seagreen3"))
+
+```
+
+To formalise this investigation we can conduct a test for independence, using a Chi-Squared test.
+First, we must construct a contingency table. In order for later assumptions regarding minimum size of expected groups $e_i$, we will lump some groups now.
+
+
+```{r}
+# Construct a contingency table
+ct = table(x$dentist, x$floss_freq)
+
+# Combine first and last row, where group size is <5.
+ct2 = ct
+ct2[1,] = ct2[1,] + ct2[4,]
+ct2 = ct2[1:3,]
+rownames(ct2)[1] = "Over 12 months"
+
+
+ct2.margins = addmargins(ct2)
+
+
+ct2.margins %>%
+  kbl(caption="Last Dentist Visit | Flossing Freq.")  %>% 
+  kable_styling(bootstrap_options = c("striped",
+                                      "hover",
+                                      "condensed",
+                                      "bordered",
+                                      full_width=T))
+
+
+
+```
+
+
+
+***
+
+
+## Hypotheses
+
+- *$H_0$*: All equalities hold - $p_{ij}=p_{i\bullet}p_{\bullet j}$;$i=1,...,r$,$j=1,...,c$
+- *$H_1$*: Not all equalities hold.  
+
+Set $\alpha = 0.05$.
+
+***
+
+## Assumptions
+In order to conduct this test, we assume that: 
+
+- The expected frequency of each group $e_i \geq 5$$^\ast$.  
+
+
+*** 
+
+
+## Test Statistic
+
+With our margins identified, we can calculate our expected values $e_{ij} = y_{i\bullet} y_{\bullet j}/n$
+
+```{r}
+c = 4
+r = 3
+
+yr = apply(ct2, 1, sum)
+
+
+yc = apply(ct2, 2, sum)
+
+
+yr.mat = matrix(yr, r, c, byrow = FALSE)
+
+yc.mat = matrix(yc, r, c, byrow = TRUE)
+
+ey.mat = yr.mat * yc.mat / sum(ct2)
+
+
+yc = addmargins(ct2)
+ey = addmargins(ct2)
+
+ey %>%
+  kbl(caption="EXPECTED VALUES: Last Dentist Visit | Flossing Freq.")  %>% 
+  kable_styling(bootstrap_options = c("striped",
+                                      "hover",
+                                      "condensed",
+                                      "bordered",
+                                      full_width=T))
+
+
+
+
+
+```
+
+$^*$*Note that exactly one group has less than 5 entries. We are allowing this for a 4x3 contingency table.*  
+
+<br>
+And subsequently our test statistic $t_0 = \sum_{i=1}^r\sum_{j=1}^c\frac{(y_{ij}-y_{i\bullet}y_{\bullet j}/n)^2}{y_{i\bullet}y_{\bullet j}/n} = 7.2$
+
+***
+
+## p-Value
+Having found our test statistic, we can calculate our p-Value using a Chi-Squared test:  
+<br>
+
+$P(T \ge t_0) = P(\chi_{6}^2 \ge 7.2) = 0.3028$
+```{r}
+t0 = sum((ct2 - ey.mat)^2 / ey.mat)
+
+pval = pchisq(t0, (r - 1) * (c - 1), 
+               lower.tail=FALSE)
+
+
+t1 = tibble("Deg. Freedom"=6,
+       "Test Statistic"=round(t0,2),
+       "p-Value"=round(pval, 4)
+       ) %>% 
+  setDF() %>% kbl() %>%
+  kable_styling(bootstrap_options = c("striped",
+                                      "hover",
+                                      "condensed",
+                                      "bordered",
+                                      full_width=T))
+t1
+```
+
+
+
+
+***
+
+## Conclusion
+Since our p-Value is well above $\alpha$, we maintain that the data are consistent with $H_0$ - it appears that among Data2X02 students, flossing habits are independent from the time elapsed since the last dentist visit.
+
+***
+
+
+
+
+
+# Hypothesis Test 3 - Study and Gender
+
+***
+
+**Do Data2X02 students of different gender display different study time habits?**
+Informally, we can observe our gathered data with some plots.
+
+``` {r Study and Gender, fig.cap="Initial study and gender plots" }
+p1 = ggplot(x_bin, aes(x = study_hrs, fill=gender)) + 
+  geom_density(alpha = 0.6) +
+  labs(x="Weekly Study (Hrs)", y="Density") +
+  scale_fill_discrete(name = "Gender", labels = c("F", "M")) +  theme(
+    legend.background = element_rect(fill="lightgray",
+                            size=0.2, linetype="solid", 
+                            colour ="gray50"),
+      legend.key.height = unit(1, "cm"),
+      legend.key.width = unit(1, "cm"))
+
+
+
+p2 = ggplot(x_bin, aes(x = gender, y=study_hrs, fill=gender)) + 
+  geom_boxplot(alpha=0.6) +
+  labs(y="Weekly Study (Hrs)", x="Gender") + 
+  theme(legend.position="none",
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+gridExtra::grid.arrange(p1,p2, ncol=2)
+
+```
+Graphically, it appears that there could be some difference in study time between males and females. We can tabulate some values to develop this intuition.
+
+
+```{r Table gender study}
+# Recall x_bin is all data excluding non-binary gender responses. 
+malesVector = x_bin$gender == "male"
+males = x_bin[malesVector,]
+femalesVector = x_bin$gender == "female"
+females = x_bin[femalesVector,]
+
+means= c(mean(males$study_hrs), mean(females$study_hrs))
+sds = c(sd(males$study_hrs), sd(females$study_hrs))
+counts = c(count(males), count(females))
+
+
+t1 = tibble("Gender"=c("Male", "Female"),
+            "Mean"=round(means,2),
+            "SD"=round(sds,2),
+            "n"=counts) %>%
+  setDF() %>% kbl() %>%
+  kable_styling(bootstrap_options = c("striped",
+                                      "hover",
+                                      "condensed",
+                                      "bordered",
+                                      full_width=T))
+t1
+
+
+```
+
+
+However, we must still conduct a hypothesis test to formalise this inquiry.
+
+
+*** 
+
+<br>
+
+## Hypotheses
+We construct the following hypotheses to formalise our test.
+
+- *$H_0$*: $\mu_f = \mu_m$ - The mean study time for males and females is the same.  
+- *$H_1$*: $\mu_f \neq \mu_m$ - The mean study time for males and females is not the same.
+
+We will conduct a two sample t-test (Not a Welch test, since variance can be considered equal). We consider our data to be two samples, split into two independent groups over gender. Each of these samples responds to the same question regarding study time.  
+Set $(\alpha = 0.05)$
+
+*** 
+
+<br>
+
+## Assumptions
+In order to conduct a regular two-sample t-test , we assume that:  
+
+- The females represent a random selection of independent respondents from the population of females in Data2X02. (They are *iid*)
+- Likewise, the males represent a random selection.
+- The males sampled are independent of the females sampled.
+- Both groups share the same variance.
+
+These assumptions warrant further discussion, though we can identify that the variance of the observed values is close enough to be considered the same.
+
+*** 
+
+<br>
+
+## Test Statistic
+
+```{r StudyGender test}
+
+nM = as.numeric(counts[1])
+nF = as.numeric(counts[2])
+sM = as.numeric(sds[1])
+sF = as.numeric(sds[2])
+
+sP = sqrt(((nM - 1) * sM^2 + (nF - 1) * sF^2)/
+            (nM + nF - 2))
+
+M_xBar = means[1]
+F_xBar = means[2]
+
+d_free = nM+nF-2
+
+t0 = (M_xBar - F_xBar)/(sP * sqrt(1/nM + 1/nF))
+
+p_val = 2 * (1 - pt(abs(t0), d_free))
+
+
+
+t1 = tibble("Sp"=round(sP,2),
+            "Observed Test Stat."=round(t0,2),
+            "Abs. Value Test Stat."=round(abs(t0),2),
+            ) %>%
+  setDF() %>% kbl() %>%
+  kable_styling(bootstrap_options = c("striped",
+                                      "hover",
+                                      "condensed",
+                                      "bordered",
+                                      full_width=T))
+
+t2 = tibble("Deg. Freedom"=d_free,
+            "Observed Test Stat."=round(t0,2),
+            "Abs. Value Test Stat."=round(abs(t0),2),
+            "p-Value"=(round(p_val,4))
+            ) %>%
+  setDF() %>% kbl() %>%
+  kable_styling(bootstrap_options = c("striped",
+                                      "hover",
+                                      "condensed",
+                                      "bordered",
+                                      full_width=T))
+
+```
+
+To generate a test statistic, we have: $T = \dfrac{{\bar M} - {\bar F}}{S_p \sqrt{\frac{1}{n_M} + \frac{1}{n_F}}}$  
+
+<br>
+
+Where $S^2_p = \dfrac{(n_M-1) S_{M}^2 + (n_F-1) S_{F}^2}{n_M+n_F-2}$
+
+<br>
+<br>
+
+**From our sample** we calculate $S_p = \sqrt{\dfrac{(101-1) 13.4^2 + (48-1) 14.4^2}{101+48-2}} = 13.7$  
+
+<br>
+
+To find our observed $t_0 = \dfrac{25.5 - 30.8}{13.7 \sqrt{\frac{1}{101} + \frac{1}{48}}} = -2.2$ 
+
+
+<br>
+``` {r}
+t1
+
+```
+
+## p-Value
+<br>
+
+Given $t_0$ we can conduct our two sided t-test.  
+<br>
+Using $Deg. Freedom = n_M + n_F - 2 = 147$, we have:   
+
+
+$\rho = 2P(t_147) \geq |-2.2 |) = 0.0265$
+
+``` {r}
+t2
+
+```
+
+***
+
+
+## Conclusion
+Since $0.0265 < \alpha$, we reject $H_0$ in favour of $H_1$. Provided our assumptions are valid, the data are consistent with the alternate hypothesis: The mean study time for males and females in Data2X02 is not the same.  
+
+However, we must discuss those assumptions. While we can reasonably claim equal population variance, we cannot confidently assert that either sample is *iid*. As discussed in the Initial Data Analysis, there is likely a non-response bias that means our samples of male and female students do not represent a random cross section of the cohort. Conceding this requires that any hypothesis test assuming independent, identically distributed samples should be challenged.
+
+***
+
+
+
+
+
+
+
+
+
+
+
+
+
+# References
+
+***
+
+
+```{r, include = FALSE}
+citation("tidyverse")
+citation("janitor")
+citation("visdat")
+citation("gendercodeR")
+citation("gt")
+citation("skimr")
+citation("rmdformats")
+citation("formattable")
+citation("data.table")
+citation("kableExtra")
+```
+
+- Beaudry J, Emily Kothe, Felix Singleton Thorn and Rhydwyn McGuire (2020). gendercodeR: Recodes Sex/Gender Descriptions Into A Standard Set. R package version 0.0.0.9000. https://github.com/ropenscilabs/gendercoder
+- Firke S (2020). janitor: Simple Tools for Examining and Cleaning Dirty Data. R package version 2.0.1. https://CRAN.R-project.org/package=janitor
+- Iannone R, Joe Cheng and Barret Schloerke (2020). gt: Easily Create Presentation-Ready Display Tables. R package version 0.2.2. https://CRAN.R-project.org/package=gt
+- R Core Team (2020). R: A language and environment for statistical computing. R Foundation for Statistical Computing, Vienna, Austria. https://www.R-project.org/.
+- Tierney N (2017). "visdat: Visualising Whole Data Frames." _JOSS_, *2*(16), 355. doi: [10.21105/joss.00355](https://doi.org/10.21105/joss.00355)
+- Waring E, Michael Quinn, Amelia McNamara, Eduardo Arino de la Rubia, Hao Zhu and Shannon Ellis (2020). skimr: Compact and Flexible Summaries of Data. R package version 2.1.2. https://CRAN.R-project.org/package=skimr
+- Wickham H et al., (2019). Welcome to the tidyverse. Journal of Open Source Software, 4(43), 1686, doi: [10.21105/joss.01686](https://doi.org/10.21105/joss.01686)
+- Julien Barnier (2020). rmdformats: HTML Output Formats and Templates for 'rmarkdown' Documents. R package version 0.3.7. https://CRAN.R-project.org/package=rmdformats  
+-   Kun Ren and Kenton Russell (2016). formattable: Create 'Formattable' Data Structures. R package version 0.2.0.1. https://CRAN.R-project.org/package=formattable  
+- Matt Dowle and Arun Srinivasan (2020). data.table: Extension of `data.frame`. R package version 1.13.0. https://CRAN.R-project.org/package=data.table  
+- Hao Zhu (2020). kableExtra: Construct Complex Table with 'kable' and Pipe Syntax. R package version 1.2.1. https://CRAN.R-project.org/package=kableExtra
+
